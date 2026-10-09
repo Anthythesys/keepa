@@ -98,6 +98,63 @@ const open = c => new Promise(res => c.ws.on('open', res));
   assert.strictEqual(host.last().phase, 'play');
   for (const cl of [host, a3, c]) cl.ws.close();
   await sleep(200);
+
+  // --- a full bot table actually plays (regression: bot driver crash) ------------
+  const solo = client();
+  await open(solo);
+  solo.send({ t: 'create', name: 'Solo' });
+  await sleep(200);
+  const code2 = solo.last().code;
+  for (let i = 0; i < 3; i++) {
+    solo.send({ t: 'bot', action: 'add' });
+    await sleep(120);
+  }
+  assert.strictEqual(solo.last().players.length, 4);
+  assert.deepStrictEqual(
+    solo.last().players.filter(p => p.bot).map(p => p.person),
+    ['chill', 'bully', 'shedder'],
+    'personalities cycle'
+  );
+  solo.send({ t: 'start' });
+  await sleep(300);
+  assert.strictEqual(solo.last().phase, 'play');
+  const RANKS = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'];
+  const rk = id => RANKS.indexOf(id.slice(0, -1));
+  let acted = 0;
+  for (let i = 0; i < 120; i++) {
+    const S = solo.last();
+    if (S.phase !== 'play') break;
+    if (!S.youTurn) {
+      await sleep(200);
+      continue;
+    }
+    if (S.stack && !S.stack.by) {
+      const byRank = {};
+      for (const c of S.hand) {
+        if (rk(c.id) < S.stack.rank) continue;
+        (byRank[c.id.slice(0, -1)] = byRank[c.id.slice(0, -1)] || []).push(c.id);
+      }
+      const pool = [];
+      for (const ids of Object.values(byRank)) if (ids.length >= S.stack.max) pool.push(ids.slice(0, S.stack.max));
+      if (pool.length) solo.send({ t: 'stack', cards: pool[0] });
+      else solo.send({ t: 'done' });
+    } else if (S.trade && S.trade.give) {
+      solo.send({ t: 'give', cards: S.hand.slice(0, S.trade.give).map(c => c.id) });
+    } else if (S.legal && S.legal.length) {
+      solo.send({ t: 'play', cards: S.legal[0] });
+    } else {
+      solo.send({ t: 'pass' });
+    }
+    acted++;
+    await sleep(150);
+  }
+  const end = solo.last();
+  const inHands = end.players.reduce((n, p) => n + p.count, 0);
+  assert.ok(acted > 5, 'human got turns, acted ' + acted);
+  assert.ok(inHands < 52, `cards left hands (${inHands}), bots played`);
+  assert.strictEqual(end.phase, 'play', 'server survived bot turns');
+  solo.ws.close();
+  await sleep(200);
   server.kill();
   console.log('server integration tests passed');
   process.exit(0);

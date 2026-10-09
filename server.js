@@ -74,25 +74,34 @@ function scheduleBot(room) {
   if (!pid) return;
   room.botTimer = setTimeout(() => {
     room.botTimer = null;
-    const gg = room.game;
-    if (!gg) return;
-    let r = null;
-    if (gg.phase === 'trade' && gg.trade && gg.trade.need[pid] != null) {
-      const p = G.player(gg, pid);
-      r = G.give(gg, pid, p.hand.slice(0, gg.trade.need[pid]).map(c => c.id));
-    } else if (gg.phase === 'play' && gg.order[gg.turnIdx] === pid) {
-      const gp = G.player(gg, pid);
-      const person = p.person || 'chill';
-      if (gg.stack && gg.stack.player === pid) {
-        const cards = G.botStack(gp.hand, gg.stack, person);
-        r = cards ? G.stack(gg, pid, cards) : G.done(gg, pid);
-      } else {
-        const cards = G.botMove(gp.hand, gg.topPlay, person);
-        r = cards ? G.play(gg, pid, cards) : G.pass(gg, pid);
+    try {
+      const gg = room.game;
+      if (!gg) return;
+      const rp = room.players.find(x => x.id === pid);
+      const person = (rp && rp.person) || 'chill';
+      let r = null;
+      if (gg.phase === 'trade' && gg.trade && gg.trade.need[pid] != null) {
+        const gp = G.player(gg, pid);
+        r = G.give(gg, pid, gp.hand.slice(0, gg.trade.need[pid]).map(c => c.id));
+      } else if (gg.phase === 'play' && gg.order[gg.turnIdx] === pid) {
+        const gp = G.player(gg, pid);
+        if (gg.stack && gg.stack.player === pid) {
+          const cards = G.botStack(gp.hand, gg.stack, person);
+          r = cards ? G.stack(gg, pid, cards) : G.done(gg, pid);
+        } else {
+          const cards = G.botMove(gp.hand, gg.topPlay, person);
+          r = cards ? G.play(gg, pid, cards) : G.pass(gg, pid);
+        }
       }
+      if (r && r.err) console.log('bot error', pid, r.err);
+      broadcast(room);
+    } catch (e) {
+      // a bot must never take the table down with it
+      console.log('bot crashed:', e.message);
+      try {
+        broadcast(room);
+      } catch (e2) {}
     }
-    if (r && r.err) console.log('bot error', pid, r.err);
-    broadcast(room);
   }, 450);
 }
 
