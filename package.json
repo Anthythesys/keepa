@@ -1,0 +1,13 @@
+{
+  "name": "keepa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Keepa — multiplayer card game (Big Two + President)",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js && node integration.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

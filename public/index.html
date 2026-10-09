@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keepa</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --felt:#12463a; --line:#0b2b23; --gold:#e8c66a; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.4 system-ui,sans-serif; background:radial-gradient(circle at 50% 30%,#1a6452,var(--felt)); color:#eef; min-height:100vh; }
+  button { font:inherit; cursor:pointer; border:0; border-radius:8px; padding:10px 18px; background:#e8c66a; color:#231a05; font-weight:600; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.ghost { background:transparent; color:#cfe; border:1px solid #4a8; }
+  .rm { background:#a33; color:#fff; padding:0 7px; border-radius:6px; margin-left:6px; }
+  .seat .k { background:#a33; color:#fff; border:0; border-radius:6px; padding:0 6px; margin-left:4px;
+             font-size:11px; cursor:pointer; }
+  .card.back { background:repeating-linear-gradient(45deg, #7a1f1f 0 6px, #fff 6px 8px, #1f3a7a 8px 14px, #fff 14px 16px); }
+  input { font:inherit; padding:10px; border-radius:8px; border:1px solid #4a8; background:#0b2b23; color:#eef; }
+  .hidden { display:none !important; }
+
+  #home { max-width:340px; margin:12vh auto; display:flex; flex-direction:column; gap:12px; text-align:center; }
+  #home h1 { font-size:52px; margin:0; color:var(--gold); letter-spacing:4px; }
+  #home p { color:#bcd; margin:0; }
+
+  header { display:flex; gap:14px; align-items:center; padding:10px 16px; background:#0b2b23cc; position:sticky; top:0; z-index:5; }
+  header .code { font-family:ui-monospace,monospace; color:var(--gold); letter-spacing:3px; }
+  header .sp { flex:1; }
+
+  #seats { position:relative; width:min(94vw,520px); aspect-ratio:1/1; margin:6px auto 0; }
+  #felt { position:absolute; inset:0; width:100%; height:100%; }
+  .seat { position:absolute; transform:translate(-50%,-50%); background:#0b2b23dd; border:1px solid #2b6;
+          border-radius:10px; padding:5px 10px; min-width:96px; max-width:150px; text-align:center; transition:border-color .2s, box-shadow .2s; }
+  .seat.turn { border-color:var(--gold); box-shadow:0 0 0 2px #e8c66a55; }
+  .seat .nm { font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .seat .ct { font-size:12px; color:#9fc; }
+  .seat.winner { border-color:var(--gold); animation:winpulse 1s ease-in-out infinite; }
+  .tag { display:inline-block; font-size:11px; padding:1px 6px; border-radius:6px; background:#e8c66a; color:#231a05; margin-left:4px; }
+
+  #center { max-width:640px; margin:6px auto; text-align:center; min-height:44px; }
+  #center .lead { color:#bcd; margin-bottom:4px; min-height:20px; }
+  #tabletop { position:absolute; left:50%; top:50%; transform:translate(-50%,-58%); display:flex; gap:6px;
+              justify-content:center; align-items:center; z-index:2; }
+  #status { margin-top:6px; font-size:17px; }
+  #status.you { color:var(--gold); font-weight:700; }
+
+  .card { width:62px; height:88px; border-radius:8px; background:#fff; color:#111; display:flex; flex-direction:column;
+          align-items:center; justify-content:center; font-weight:700; font-size:19px; box-shadow:0 3px 6px #0007; user-select:none; }
+  .card .st { font-size:24px; line-height:1; }
+  .card.red { color:#c22; }
+  .hand .card { margin-left:-16px; cursor:pointer; transition:transform .15s ease, box-shadow .15s ease; }
+  .hand .card:first-child { margin-left:0; }
+  .hand .card:hover { transform:translateY(-6px); }
+  .hand .card.pick { transform:translateY(-12px) scale(1.06); outline:3px solid var(--gold);
+                     box-shadow:0 8px 14px #0009; animation:lift .18s ease; }
+  @keyframes lift { from { transform:translateY(0) scale(1); } }
+  #tabletop .card { width:64px; height:92px; }
+  #tabletop .card.deal { animation:deal .35s ease backwards; }
+  #tabletop .card.deal:nth-child(2) { animation-delay:.07s; }
+  #tabletop .card.deal:nth-child(3) { animation-delay:.14s; }
+  #tabletop .card.deal:nth-child(4) { animation-delay:.21s; }
+  @keyframes deal { from { transform:translateY(30px) scale(.6); opacity:0; } }
+  .hand .card.in { animation:gain .4s ease backwards; }
+  @keyframes gain { from { transform:translateY(-26px) scale(.6); opacity:0; } }
+
+  .trophy { font-size:46px; display:inline-block; animation:tbounce .8s ease-in-out infinite; }
+  @keyframes tbounce { 0%,100% { transform:translateY(0) scale(1); } 50% { transform:translateY(-10px) scale(1.15) rotate(-6deg); } }
+  @keyframes winpulse { 50% { box-shadow:0 0 20px 4px #e8c66acc; } }
+  .panel li.champ { color:var(--gold); font-weight:700; font-size:18px; }
+
+  @media (prefers-reduced-motion:reduce) {
+    .hand .card.pick, #tabletop .card.deal, .hand .card.in, .trophy, .seat.winner { animation:none !important; }
+    .hand .card { transition:none; }
+  }
+
+  #you { text-align:center; padding-bottom:24px; }
+  .hand { display:flex; justify-content:center; padding:8px; flex-wrap:wrap; gap:0; }
+  #actions { display:flex; gap:10px; justify-content:center; margin-top:6px; }
+
+  #log { max-width:640px; margin:0 auto 30px; background:#0b2b2388; border-radius:10px; padding:8px 12px; font-size:13px;
+         max-height:150px; overflow:auto; color:#cde; }
+  #log div:last-child { color:var(--gold); }
+
+  .overlay { position:fixed; inset:0; background:#041713e8; display:flex; align-items:center; justify-content:center; z-index:20; padding:20px; }
+  .panel { background:#0f342b; border:1px solid #2b6; border-radius:14px; padding:22px; max-width:560px; width:100%; text-align:center; }
+  .panel h2 { margin-top:0; color:var(--gold); }
+  .panel ul { list-style:none; padding:0; margin:10px 0; }
+  .panel li { padding:5px 0; display:flex; justify-content:space-between; gap:10px; }
+  #err { position:fixed; top:14px; left:50%; transform:translateX(-50%); background:#a22; color:#fff; padding:8px 16px;
+         border-radius:8px; z-index:50; }
+  #vol { accent-color:var(--gold); }
+</style>
+</head>
+<body>
+<div id="err" class="hidden"></div>
+
+<div id="home">
+  <h1>KEEPA</h1>
+  <p>4–6 players · 3&diams; starts · 3 4 5 6 7 8 9 10 J Q K A 2</p>
+  <input id="name" placeholder="Your name" maxlength="20">
+  <button id="create">Create a table</button>
+  <input id="code" placeholder="Room code" maxlength="4" style="text-transform:uppercase">
+  <button id="join" class="ghost">Join</button>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <b style="color:var(--gold)">KEEPA</b>
+    <span class="code" id="hcode"></span>
+    <span id="hround"></span>
+    <span class="sp"></span>
+    <span id="hlog" style="color:#9fc;font-size:13px"></span>
+    <button id="menu" class="ghost" style="padding:4px 10px" title="Abandon game, back to main menu">Menu</button>
+    <button id="mute" class="ghost" style="padding:4px 10px" title="Sound on/off">🔊</button>
+    <input id="vol" type="range" min="0" max="100" value="70" title="Volume" style="width:90px;padding:0;background:transparent;border:0">
+  </header>
+  <div id="seats"><svg id="felt" viewBox="0 0 100 100" aria-hidden="true"></svg><div id="tabletop"></div><div id="chips"></div></div>
+  <div id="center">
+    <div class="lead" id="lead"></div>
+    <div id="status"></div>
+  </div>
+  <div id="you">
+    <div class="hand" id="hand"></div>
+    <div id="actions">
+      <button id="play">Play</button>
+      <button id="pass" class="ghost">Pass</button>
+    </div>
+  </div>
+  <div id="log"></div>
+</div>
+
+<div id="overlay" class="overlay hidden"><div class="panel" id="panel"></div></div>
+
+<script>
+let ws = null, S = null, sel = new Set(), myId = null, myCode = '', myName = '';
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function send(o) { ws.send(JSON.stringify(o)); }
+function boom(msg) { const e = $('err'); e.textContent = msg; e.classList.remove('hidden'); clearTimeout(boom.t); boom.t = setTimeout(() => e.classList.add('hidden'), 3500); }
+
+let pending = null;
+const once = {};
+let lastCenter = '';
+let lastHandIds = new Set();
+
+// tiny synth — WebAudio only, no files
+let soundOn = localStorage.getItem('keepa-mute') !== '1';
+const _pv = parseInt(localStorage.getItem('keepa-vol'), 10);
+let VOL = (isNaN(_pv) ? 70 : Math.min(100, Math.max(0, _pv))) / 100;
+let AC = null;
+function ac() {
+  if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+  if (AC.state === 'suspended') AC.resume();
+  return AC;
+}
+function tone(freq, dur = 0.1, delay = 0, type = 'triangle', vol = 0.07) {
+  if (!soundOn) return;
+  try {
+    const a = ac();
+    if (a.state === 'suspended') return; // no gesture yet — skip, don't queue
+    const o = a.createOscillator(), v = a.createGain();
+    o.type = type;
+    o.frequency.value = freq;
+    v.gain.setValueAtTime(0, a.currentTime + delay);
+    v.gain.linearRampToValueAtTime(vol * VOL, a.currentTime + delay + 0.012);
+    v.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + delay + dur);
+    o.connect(v).connect(a.destination);
+    o.start(a.currentTime + delay);
+    o.stop(a.currentTime + delay + dur + 0.05);
+  } catch (e) { /* no audio device — stay silent */ }
+}
+const sfx = {
+  turn: () => tone(880, 0.12, 0, 'sine', 0.05),
+  play: suit => {
+    const f = { D: 523.25, C: 440.0, H: 587.33, S: 349.23 }[suit] || 520;
+    tone(f, 0.08);
+    tone(f * 1.5, 0.1, 0.05);
+  },
+  stack: () => { tone(330, 0.08); tone(440, 0.08, 0.07); tone(560, 0.1, 0.14); },
+  trade: () => { tone(400, 0.08, 0, 'sine'); tone(600, 0.09, 0.07, 'sine'); },
+  close: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.1, i * 0.08)),
+  win: won => {
+    if (won) [523, 659, 784, 1047, 784, 1047].forEach((f, i) => tone(f, 0.12, i * 0.1));
+    else { tone(392, 0.12); tone(523, 0.15, 0.1); }
+  },
+};
+let prevPhase = '', prevTurn = false, booted = false;
+const oncePer = (key, fn) => { if (once[key]) return; once[key] = 1; fn(); };
+
+function ensureSocket() {
+  if (ws && ws.readyState <= 1) {
+    // socket already up: flush any queued join/create instead of dropping it
+    if (ws.readyState === 1 && pending) {
+      const m = pending;
+      pending = null;
+      ws.send(JSON.stringify(m));
+    }
+    return;
+  }
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  ws.onopen = () => {
+    let m = pending;
+    pending = null;
+    if (!m) {
+      const s = sessionStorage.getItem('keepa');
+      if (s) { const d = JSON.parse(s); m = { t: 'join', code: d.code, name: d.name }; myCode = d.code; myName = d.name; }
+    }
+    if (m) ws.send(JSON.stringify(m));
+  };
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.t === 'joined') { myId = m.pid; myCode = m.code; sessionStorage.setItem('keepa', JSON.stringify({ code: m.code, name: myName })); }
+    if (m.t === 'err') { for (const k in once) delete once[k]; boom(m.msg); }
+    if (m.t === 'kicked') { leaveToMenu('You were kicked — a bot took your seat.'); return; }
+    if (m.t === 'state') { S = m.s; myId = S.you; render(); }
+  };
+  ws.onclose = () => {
+    ws = null;
+    if (myCode && myName) setTimeout(() => { pending = { t: 'join', code: myCode, name: myName }; ensureSocket(); }, 1500);
+  };
+}
+
+function leaveToMenu(reason) {
+  sessionStorage.removeItem('keepa');
+  myCode = '';
+  myName = '';
+  try {
+    if (ws) {
+      ws.onclose = null; // don't auto-rejoin: we left on purpose
+      ws.close();
+    }
+  } catch (e) {}
+  ws = null;
+  S = null;
+  sel.clear();
+  prevPhase = '';
+  prevTurn = false;
+  booted = false;
+  lastCenter = '';
+  lastHandIds = new Set();
+  for (const k in once) delete once[k];
+  $('app').classList.add('hidden');
+  $('overlay').classList.add('hidden');
+  $('home').classList.remove('hidden');
+  $('name').value = '';
+  $('code').value = '';
+  if (reason) boom(reason);
+}
+
+$('menu').onclick = () => {
+  if (confirm('Abandon the game and return to the main menu?')) leaveToMenu();
+};
+
+$('create').onclick = () => {
+  myName = $('name').value.trim();
+  if (!myName) return boom('Enter your name first');
+  sessionStorage.removeItem('keepa');
+  pending = { t: 'create', name: myName };
+  ensureSocket();
+};
+$('join').onclick = () => {
+  myName = $('name').value.trim();
+  myCode = $('code').value.trim().toUpperCase();
+  if (!myName) return boom('Enter your name first');
+  if (myCode.length !== 4) return boom('Room code is 4 letters');
+  sessionStorage.removeItem('keepa');
+  pending = { t: 'join', code: myCode, name: myName };
+  ensureSocket();
+};
+
+function cardHTML(c, cls) { return `<div class="card ${c.red ? 'red' : ''} ${cls || ''}" data-id="${c.id}">${c.id.slice(0, -1)}<span class="st">${c.l.slice(-1)}</span></div>`; }
+
+function legalNow() {
+  if (!S.legal || !sel.size) return null;
+  const ids = [...sel];
+  const rank = id => id.slice(0, -1);
+  if (ids.some(id => rank(id) !== rank(ids[0]))) return null;
+  if (!S.legal.some(p => p.length === ids.length && rank(p[0]) === rank(ids[0]))) return null;
+  return ids;
+}
+
+function render() {
+  if (!S) return;
+  const keep = new Set((S.hand || []).map(c => c.id));
+  [...sel].forEach(id => { if (!keep.has(id)) sel.delete(id); });
+  $('home').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  const me = S.players.find(p => p.you);
+
+  // header
+  $('hcode').textContent = S.code || myCode;
+  $('hround').textContent = S.phase === 'lobby' ? 'Lobby' : 'Round ' + S.round + ' · dealt by ' + (S.dealer || '?');
+  $('hlog').textContent = S.phase === 'play' && S.youTurn ? 'Your turn' : '';
+
+  // seats around the polygon table, you always at the bottom
+  const n = S.players.length;
+  const meIdx = Math.max(0, S.players.findIndex(p => p.you));
+  const champ = S.phase === 'roundend' && S.standings.length ? S.standings[0] : null;
+  const at = (k, r) => {
+    const a = (90 + k * 360 / n) * Math.PI / 180;
+    return [(50 + r * Math.cos(a)).toFixed(1), (50 + r * Math.sin(a)).toFixed(1)];
+  };
+  const poly = r => S.players.map((_, k) => at(k, r).join(',')).join(' ');
+  $('felt').innerHTML =
+    `<polygon points="${poly(34)}" fill="#5a3a1e"/>` +
+    `<polygon points="${poly(30)}" fill="#0d3b31" stroke="#e8c66a" stroke-width="0.7"/>`;
+  $('chips').innerHTML = S.players.map((p, i) => {
+    const [x, y] = at((i - meIdx + n) % n, 40);
+    const badges = [p.place ? `<span class="tag">#${p.place}</span>` : '', p.isTurn ? '<span class="tag">turn</span>' : '', p.out ? '<span class="tag">done</span>' : '', p.passed ? ' <span class="ct">passed</span>' : ''].join('');
+    const cards = S.phase === 'lobby' ? '' : `<div class="ct">${p.out ? 'finished' : p.count + ' cards'}</div>`;
+    const win = champ === p.name ? ' winner' : '';
+    const kick = S.phase !== 'lobby' && S.you === S.host && !p.you && !p.bot ? `<button class="k" data-id="${p.id}" title="Kick (a bot takes over)">×</button>` : '';
+    return `<div class="seat${p.isTurn ? ' turn' : ''}${win}" style="left:${x}%;top:${y}%"><div class="nm">${p.bot ? '🤖 ' : ''}${win ? '🏆 ' : ''}${esc(p.name)}${p.you ? ' (you)' : ''}${kick}</div>${cards}${badges}</div>`;
+  }).join('');
+  $('chips').querySelectorAll('.k').forEach(el => {
+    el.onclick = e => {
+      e.stopPropagation();
+      const target = (S.players || []).find(p => p.id === el.dataset.id);
+      if (target && confirm(`Kick ${target.name}? A bot takes their seat.`)) send({ t: 'kick', id: el.dataset.id });
+    };
+  });
+
+  // table — animate only fresh plays / newly gained cards, not every re-render
+  const pickMode = S.phase === 'trade' && S.trade && S.trade.give;
+  const stackMode = S.phase === 'play' && S.stack && !S.stack.by;
+  const centerKey = S.topPlay
+    ? 'play:' + S.topPlay.by + ':' + S.topPlay.cards.map(c => c.id).join(',')
+    : pickMode
+      ? 'trade:' + S.trade.other + ':' + S.trade.count
+      : 'lead:' + (S.leads || '');
+  const freshCenter = centerKey !== lastCenter;
+  lastCenter = centerKey;
+  const dealCls = freshCenter ? 'deal' : '';
+  if (pickMode) {
+    $('lead').textContent = `You took the best card${S.trade.give > 1 ? 's' : ''} from ${S.trade.other}`;
+    $('tabletop').innerHTML = Array.from({ length: S.trade.count }, () => '<div class="card back"></div>').join('');
+    $('status').textContent = `Pick ${S.trade.give} card${S.trade.give > 1 ? 's' : ''} from your hand to give back, then press Give`;
+    $('status').className = 'you';
+  } else {
+    $('lead').textContent = S.topPlay ? `${S.topPlay.by} played` : (S.leads ? `${S.leads} leads` : '');
+    $('tabletop').innerHTML = S.topPlay ? S.topPlay.cards.map(c => cardHTML(c, dealCls)).join('') : '';
+    if (stackMode) {
+      $('status').textContent = `Everyone passed — stack up to ${S.stack.max} more (${S.stack.rankName} or higher), or Done`;
+      $('status').className = 'you';
+    } else if (S.phase === 'play' && S.stack) {
+      $('status').textContent = `${S.stack.by} may stack up to ${S.stack.max} more or end the play`;
+      $('status').className = '';
+    } else {
+      $('status').textContent = S.phase !== 'play' ? '' : S.youTurn ? (S.topPlay ? 'Your turn — beat it or pass' : 'Your turn — you lead') : 'Waiting for ' + (S.turn || '…');
+      $('status').className = S.youTurn ? 'you' : '';
+    }
+  }
+
+  // hand — flag only cards that just arrived (trade takes)
+  const prevIds = lastHandIds;
+  lastHandIds = new Set((S.hand || []).map(c => c.id));
+  const playable = S.phase === 'play' && S.youTurn;
+  $('hand').innerHTML = (S.hand || []).map(c => {
+    let cls = '';
+    if (sel.has(c.id)) cls = 'pick';
+    else if (!prevIds.has(c.id)) cls = 'in';
+    return cardHTML(c, cls);
+  }).join('');
+  $('actions').classList.toggle('hidden', !(playable || pickMode || stackMode));
+  $('play').textContent = pickMode ? `Give ${sel.size}/${S.trade.give}` : stackMode ? `Stack ${sel.size}/${S.stack.max}` : 'Play';
+  $('play').disabled = pickMode ? (sel.size !== S.trade.give || !!once['give:' + S.round]) : stackMode ? !stackNow() : !legalNow();
+  $('pass').classList.toggle('hidden', pickMode);
+  $('pass').textContent = stackMode ? 'Done' : 'Pass';
+  $('pass').disabled = stackMode ? false : !S.canPass;
+
+  // log
+  $('log').innerHTML = (S.log || []).map(l => `<div>${esc(l)}</div>`).join('');
+  $('log').scrollTop = $('log').scrollHeight;
+
+  // sounds — only on transitions, never on first paint
+  const lastLine = (S.log || []).length ? S.log[S.log.length - 1] : '';
+  const myName = (S.players.find(p => p.you) || {}).name;
+  if (booted && soundOn) {
+    if (!prevTurn && S.youTurn && S.phase === 'play') sfx.turn();
+    if (freshCenter && S.topPlay) {
+      if (lastLine.includes('closed the hand')) sfx.close();
+      else if (lastLine.includes('stacks')) sfx.stack();
+      else sfx.play(S.topPlay.cards[0].id.slice(-1));
+    }
+    if (freshCenter && pickMode) sfx.trade();
+    if (prevPhase !== 'roundend' && S.phase === 'roundend') sfx.win(S.standings[0] === myName);
+  }
+  prevPhase = S.phase;
+  prevTurn = S.youTurn;
+  booted = true;
+
+  renderOverlay();
+}
+
+function renderOverlay() {
+  const o = $('overlay'), p = $('panel');
+  if (S.phase === 'lobby') {
+    o.classList.remove('hidden');
+    p.innerHTML = `<h2>Table ${esc(S.code || myCode)}</h2>
+      <p>Share the code. 4–6 players, then the host starts.</p>
+      <ul>${S.players.map(x => `<li><span>${x.bot ? '🤖 ' : ''}${esc(x.name)}${x.you ? ' (you)' : ''}</span><span>${x.connected ? (S.host === x.id ? 'host' : 'ready') : (x.bot ? 'bot' : 'disconnected')}${x.bot && S.you === S.host ? ` <button class="rm" data-id="${x.id}">×</button>` : ''}</span></li>`).join('')}</ul>
+      ${S.you === S.host
+        ? `<div><button id="start" ${S.players.length < 4 || S.players.length > 6 ? 'disabled' : ''}>Start (${S.players.length}/4–6)</button> <button id="addbot" class="ghost" ${S.players.length >= 6 ? 'disabled' : ''}>Add bot</button></div>`
+        : '<p>Waiting for the host to start…</p>'}`;
+    const b = $('start');
+    if (b) b.onclick = () => oncePer('start', () => send({ t: 'start' }));
+    const ab = $('addbot');
+    if (ab) ab.onclick = () => send({ t: 'bot', action: 'add' });
+    p.querySelectorAll('.rm').forEach(el => { el.onclick = () => send({ t: 'bot', action: 'remove', id: el.dataset.id }); });
+    return;
+  }
+  if (S.phase === 'roundend') {
+    o.classList.remove('hidden');
+    p.innerHTML = `<h2>Round ${S.round} results</h2>
+      <div class="trophy">🏆</div>
+      <ul>${S.standings.map((n, i) => `<li class="${i === 0 ? 'champ' : ''}"><span>#${i + 1} ${esc(n)}</span></li>`).join('')}</ul>
+      <h3>Score (lower is better)</h3>
+      <ul>${[...S.scores].sort((a, b) => a.total - b.total).map(s => `<li><span>${esc(s.name)}</span><span>${s.places.join(', ')} = ${s.total}</span></li>`).join('')}</ul>
+      ${S.you === S.host ? '<button id="next">Next round — loser deals</button>' : '<p>Waiting for the host…</p>'}`;
+    const b = $('next');
+    if (b) b.onclick = () => oncePer('next:' + S.round, () => send({ t: 'next' }));
+    return;
+  }
+  if (S.phase === 'trade') {
+    if (S.trade && S.trade.give) {
+      o.classList.add('hidden'); // no modal: the hand must stay clickable
+    } else {
+      o.classList.remove('hidden');
+      p.innerHTML = `<h2>Card trade</h2><p>Waiting for ${esc((S.trade && S.trade.waiting || []).join(' and '))} to trade cards…</p>`;
+    }
+    return;
+  }
+  o.classList.add('hidden');
+}
+
+function stackNow() {
+  if (!S.stack || S.stack.by || !sel.size) return null;
+  const ids = [...sel];
+  if (ids.length !== S.stack.max) return null;
+  const order = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'];
+  const r0 = ids[0].slice(0, -1);
+  if (ids.some(id => id.slice(0, -1) !== r0)) return null;
+  if (order.indexOf(r0) < S.stack.rank) return null;
+  return ids;
+}
+
+document.addEventListener('click', e => {
+  const c = e.target.closest('#hand .card');
+  if (!c || !S) return;
+  const pickMode = S.phase === 'trade' && S.trade && S.trade.give;
+  const stackMode = S.phase === 'play' && S.stack && !S.stack.by;
+  if (!(S.youTurn || pickMode || stackMode)) return;
+  const id = c.dataset.id;
+  if (sel.has(id)) sel.delete(id);
+  else {
+    const cap = pickMode ? S.trade.give : stackMode ? S.stack.max : 0;
+    if ((pickMode || stackMode) && sel.size >= cap) sel.clear();
+    sel.add(id);
+  }
+  render();
+});
+
+$('play').onclick = () => {
+  if (S.phase === 'trade') return oncePer('give:' + S.round, () => send({ t: 'give', cards: [...sel] }));
+  if (S.stack && !S.stack.by) {
+    const ids = stackNow();
+    if (ids) { send({ t: 'stack', cards: ids }); sel.clear(); render(); }
+    return;
+  }
+  const ids = legalNow();
+  if (ids) { send({ t: 'play', cards: ids }); sel.clear(); render(); }
+};
+$('pass').onclick = () => {
+  sel.clear();
+  send({ t: S.stack && !S.stack.by ? 'done' : 'pass' });
+};
+
+$('mute').onclick = () => {
+  soundOn = !soundOn;
+  localStorage.setItem('keepa-mute', soundOn ? '0' : '1');
+  $('mute').textContent = soundOn ? '🔊' : '🔇';
+};
+if (!soundOn) $('mute').textContent = '🔇';
+$('vol').value = Math.round(VOL * 100);
+$('vol').oninput = () => {
+  VOL = $('vol').value / 100;
+  localStorage.setItem('keepa-vol', String($('vol').value));
+};
+document.addEventListener('pointerdown', () => { if (soundOn) { try { ac(); } catch (e) {} } });
+
+// background music — one soft pad chord every 2s; a new progression each round
+const TRACKS = [
+  [[220.0, 261.63, 329.63], [174.61, 220.0, 261.63], [261.63, 329.63, 392.0], [196.0, 293.66, 392.0]],
+  [[164.81, 196.0, 246.94], [196.0, 261.63, 329.63], [196.0, 246.94, 293.66], [293.66, 369.99, 440.0]],
+  [[293.66, 349.23, 440.0], [233.08, 293.66, 349.23], [174.61, 220.0, 261.63], [261.63, 329.63, 392.0]],
+];
+function trackFor(round) { return TRACKS[(((round || 1) - 1) % TRACKS.length + TRACKS.length) % TRACKS.length]; }
+let musicTimer = null, chordIdx = 0;
+document.addEventListener('pointerdown', function startMusic() {
+  if (musicTimer) return;
+  musicTimer = setInterval(() => {
+    if (!soundOn) return;
+    try {
+      if (ac().state !== 'running') return;
+      const track = trackFor(S && S.round);
+      const ch = track[chordIdx++ % track.length];
+      ch.forEach(f => tone(f, 1.8, 0, 'sine', 0.016));
+      tone(ch[0] < 160 ? ch[0] : ch[0] / 2, 1.8, 0, 'sine', 0.02);
+    } catch (e) { /* stay silent */ }
+  }, 2000);
+});
+
+if (sessionStorage.getItem('keepa')) {
+  const d = JSON.parse(sessionStorage.getItem('keepa'));
+  myCode = d.code; myName = d.name;
+  $('name').value = d.name;
+  $('code').value = d.code;
+  pending = { t: 'join', code: d.code, name: d.name };
+  ensureSocket();
+}
+</script>
+</body>
+</html>
