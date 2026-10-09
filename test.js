@@ -98,13 +98,26 @@ step(['7C']);
 assert.strictEqual(g2.topPlay, null, 'four 7s in a row closes the hand');
 assert.strictEqual(g2.turnIdx, 1, 'the closer leads the next trick');
 
-// --- bot policy -----------------------------------------------------------
+// --- bot personalities ------------------------------------------------------
 const mkHand = ids => ids.map(id => ({ id, r: G.RANKS.indexOf(id.slice(0, -1)), s: id.slice(-1) }));
-assert.deepStrictEqual(G.botMove(mkHand(['5D', '9C', '2H']), null), ['5D'], 'bot leads with its lowest card');
-assert.deepStrictEqual(G.botMove(mkHand(['5D', '9C', '2H']), { rank: 4, size: 1 }), ['9C'], 'bot answers with the lowest winner');
-assert.strictEqual(G.botMove(mkHand(['5D', '9C']), { rank: 12, size: 1 }), null, 'bot passes when it cannot beat');
-assert.strictEqual(G.botMove(mkHand(['5D', '9C', '2H']), { rank: 0, size: 2 }), null, 'bot skips pairs');
-assert.strictEqual(G.botMove(mkHand(['5D', '9C', '2H']), { rank: 0, size: 3 }), null, 'bot skips trios');
+// chill (default): lowest single, ducks multis, never stacks
+assert.deepStrictEqual(G.botMove(mkHand(['5D', '9C', '2H']), null), ['5D'], 'chill leads lowest');
+assert.deepStrictEqual(G.botMove(mkHand(['5D', '9C', '2H']), { rank: 4, size: 1 }), ['9C'], 'chill answers lowest');
+assert.strictEqual(G.botMove(mkHand(['5D', '9C']), { rank: 12, size: 1 }), null, 'chill passes when beaten');
+assert.strictEqual(G.botMove(mkHand(['5D', '9C', '2H']), { rank: 0, size: 2 }), null, 'chill ducks pairs');
+assert.strictEqual(G.botStack(mkHand(['9D', '9C']), { rank: 4, max: 2 }, 'chill'), null, 'chill declines');
+// bully: highest everything, answers multis, stacks highest
+assert.deepStrictEqual(G.botMove(mkHand(['5D', '9C', '2H']), null, 'bully'), ['2H'], 'bully leads highest');
+assert.deepStrictEqual(G.botMove(mkHand(['5D', '9C', '9H']), { rank: 4, size: 2 }, 'bully'), ['9C', '9H'], 'bully answers pairs');
+assert.deepStrictEqual(G.botStack(mkHand(['9D', 'KD', 'KC']), { rank: 4, max: 2 }, 'bully'), ['KD', 'KC'], 'bully stacks highest');
+// shedder: most cards first
+assert.deepStrictEqual(G.botMove(mkHand(['5D', '9C', '9H']), null, 'shedder'), ['9C', '9H'], 'shedder sheds the pair');
+assert.deepStrictEqual(G.botMove(mkHand(['5D', '9C', '9H', '9S']), null, 'shedder'), ['9C', '9H', '9S'], 'shedder sheds the trio');
+assert.deepStrictEqual(G.botStack(mkHand(['5D', '5C', '9D', '9C']), { rank: 0, max: 2 }, 'shedder'), ['5D', '5C'], 'shedder stacks lowest');
+// saver: holds back aces and 2s
+assert.deepStrictEqual(G.botMove(mkHand(['9C', 'AD', '2H']), null, 'saver'), ['9C'], 'saver spares powers');
+assert.deepStrictEqual(G.botMove(mkHand(['AD', '2H']), null, 'saver'), ['AD'], 'saver plays ace when forced');
+assert.strictEqual(G.botStack(mkHand(['9D', '9C']), { rank: 4, max: 2 }, 'saver'), null, 'saver declines');
 
 // --- full random rounds: cards conserved, places complete -----------------
 function randomRound(nPlayers) {

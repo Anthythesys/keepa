@@ -81,11 +81,13 @@ function scheduleBot(room) {
       const p = G.player(gg, pid);
       r = G.give(gg, pid, p.hand.slice(0, gg.trade.need[pid]).map(c => c.id));
     } else if (gg.phase === 'play' && gg.order[gg.turnIdx] === pid) {
+      const gp = G.player(gg, pid);
+      const person = p.person || 'chill';
       if (gg.stack && gg.stack.player === pid) {
-        r = G.done(gg, pid); // bots never stack, they just end the play
+        const cards = G.botStack(gp.hand, gg.stack, person);
+        r = cards ? G.stack(gg, pid, cards) : G.done(gg, pid);
       } else {
-        const p = G.player(gg, pid);
-        const cards = G.botMove(p.hand, gg.topPlay);
+        const cards = G.botMove(gp.hand, gg.topPlay, person);
         r = cards ? G.play(gg, pid, cards) : G.pass(gg, pid);
       }
     }
@@ -100,7 +102,7 @@ function lobbyView(room, pid) {
     host: room.players[0] && room.players[0].id,
     code: room.code,
     you: pid,
-    players: room.players.map(p => ({ id: p.id, name: p.name, bot: !!p.bot, connected: p.ws !== null, you: p.id === pid })),
+    players: room.players.map(p => ({ id: p.id, name: p.name, bot: !!p.bot, person: p.person || null, connected: p.ws !== null, you: p.id === pid })),
   };
 }
 
@@ -203,7 +205,9 @@ function handle(ws, m) {
       if (m.action === 'add') {
         if (room.players.length >= 6) return fail('Room is full (max 6)');
         room.botSeq = (room.botSeq || 0) + 1;
-        room.players.push({ id: 'p' + ++seq, name: 'Bot ' + room.botSeq, ws: null, bot: true });
+        // cycle personalities so a full bot table always has variety
+        const person = G.PERSONALITIES[(room.botSeq - 1) % G.PERSONALITIES.length];
+        room.players.push({ id: 'p' + ++seq, name: 'Bot ' + room.botSeq, ws: null, bot: true, person });
       } else {
         const i = room.players.findIndex(p => p.bot && p.id === m.id);
         if (i < 1) return fail('No such bot');

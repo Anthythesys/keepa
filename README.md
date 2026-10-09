@@ -12,7 +12,7 @@ npm test           # rules + server integration (kick, disconnect grace)
 
 Open the link, one player hits **Create a table**, the others join with the 4-letter code. Host starts with 4–6 players. Everything happens live over WebSockets; refreshing rejoins you (same name + code).
 
-**Bots** — the host can press *Add bot* in the lobby (and × to remove one) to fill seats up to 6. Bot policy is deliberately dumb: they always play their lowest single, and they pass when facing a pair, trio or quad — so humans can test a full round solo.
+**Bots** — the host can press *Add bot* in the lobby (and × to remove one) to fill seats up to 6. Added bots cycle through four personalities: 😌 **Chill** (lowest single, ducks pairs+, never stacks), 😤 **Bully** (highest card, answers multis, always stacks), 🃏 **Shedder** (dumps the biggest combo first), 🦉 **Saver** (like Chill but holds back aces and 2s until forced).
 
 **Menu, kick, reconnects** — *Menu* (top bar, asks first) abandons the game back to the home screen. In game, the host can kick a player with the × on their seat (asks first); a bot takes their seat immediately and the kicked player can't rejoin that room. If anyone's connection drops mid-round they have 60 seconds to come back (same name + code); after that a bot takes over, and returning later puts them straight back in the bot's seat.
 

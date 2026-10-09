@@ -86,15 +86,39 @@ function stackOptions(hand, baseRank, max) {
   return out;
 }
 
-// Bot policy: always the lowest single, and duck anything bigger than a single.
-// Returns the cards to play, or null to pass.
-// ponytail: bots always decline the stack offer — dumb but predictable
-function botMove(hand, top) {
-  if (top && top.size > 1) return null;
-  const singles = legalPlays(hand, top).filter(p => p.length === 1);
+// Bot personalities:
+// chill   — lowest single, ducks pairs+, never stacks (the original bot)
+// bully   — highest legal card, answers multis, always stacks highest
+// shedder — sheds the most cards first (quads > trios > pairs), stacks lowest
+// saver   — like chill but holds back aces and 2s until forced
+const PERSONALITIES = ['chill', 'bully', 'shedder', 'saver'];
+const byRankAsc = (a, b) => rankOf(a[0]) - rankOf(b[0]);
+
+function botMove(hand, top, person) {
+  const opts = legalPlays(hand, top);
+  if (!opts.length) return null;
+  if (person === 'bully') {
+    return opts.slice().sort((a, b) => rankOf(b[0]) - rankOf(a[0]) || b.length - a.length)[0];
+  }
+  if (person === 'shedder') {
+    return opts.slice().sort((a, b) => b.length - a.length || byRankAsc(a, b))[0];
+  }
+  const singles = opts.filter(p => p.length === 1);
+  if (person === 'saver') {
+    const modest = singles.filter(p => rankOf(p[0]) < RANKS.indexOf('A'));
+    if (modest.length) return modest.slice().sort(byRankAsc)[0];
+  }
   if (!singles.length) return null;
-  singles.sort((a, b) => rankOf(a[0]) - rankOf(b[0]));
-  return [singles[0][0]];
+  return singles.slice().sort(byRankAsc)[0];
+}
+
+// Returns the stack to play, or null to end the play.
+function botStack(hand, offer, person) {
+  if (person !== 'bully' && person !== 'shedder') return null;
+  const opts = stackOptions(hand, offer.rank, offer.max);
+  if (!opts.length) return null;
+  const sorted = opts.slice().sort(byRankAsc);
+  return person === 'bully' ? sorted[sorted.length - 1] : sorted[0];
 }
 
 function createGame(members, hostId) {
@@ -102,7 +126,7 @@ function createGame(members, hostId) {
     phase: 'lobby',
     host: hostId,
     order: members.map(m => m.id),
-    players: members.map(m => ({ id: m.id, name: m.name, hand: [], place: null, bot: !!m.bot })),
+    players: members.map(m => ({ id: m.id, name: m.name, hand: [], place: null, bot: !!m.bot, person: m.person || null })),
     round: 0,
     dealer: null,
     log: [],
@@ -435,6 +459,7 @@ function view(g, pid) {
       id: p.id,
       name: p.name,
       bot: !!p.bot,
+      person: p.person || null,
       count: p.hand.length,
       place: p.place,
       out: g.out.has(p.id),
@@ -480,6 +505,8 @@ module.exports = {
   comboOf,
   legalPlays,
   botMove,
+  botStack,
+  PERSONALITIES,
   describe,
   createGame,
   startRound,

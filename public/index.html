@@ -272,6 +272,11 @@ $('join').onclick = () => {
 
 function cardHTML(c, cls) { return `<div class="card ${c.red ? 'red' : ''} ${cls || ''}" data-id="${c.id}">${c.id.slice(0, -1)}<span class="st">${c.l.slice(-1)}</span></div>`; }
 
+const PERSON_EMOJI = { chill: '😌', bully: '😤', shedder: '🃏', saver: '🦉' };
+const PERSON_NAME = { chill: 'Chill', bully: 'Bully', shedder: 'Shedder', saver: 'Saver' };
+const botEmoji = p => (p.bot ? (PERSON_EMOJI[p.person] || '🤖') + ' ' : '');
+const botLabel = p => (p.bot && p.person && PERSON_NAME[p.person] ? ` · ${PERSON_NAME[p.person]}` : '');
+
 function legalNow() {
   if (!S.legal || !sel.size) return null;
   const ids = [...sel];
@@ -312,7 +317,7 @@ function render() {
     const cards = S.phase === 'lobby' ? '' : `<div class="ct">${p.out ? 'finished' : p.count + ' cards'}</div>`;
     const win = champ === p.name ? ' winner' : '';
     const kick = S.phase !== 'lobby' && S.you === S.host && !p.you && !p.bot ? `<button class="k" data-id="${p.id}" title="Kick (a bot takes over)">×</button>` : '';
-    return `<div class="seat${p.isTurn ? ' turn' : ''}${win}" style="left:${x}%;top:${y}%"><div class="nm">${p.bot ? '🤖 ' : ''}${win ? '🏆 ' : ''}${esc(p.name)}${p.you ? ' (you)' : ''}${kick}</div>${cards}${badges}</div>`;
+    return `<div class="seat${p.isTurn ? ' turn' : ''}${win}" style="left:${x}%;top:${y}%"><div class="nm">${botEmoji(p)}${win ? '🏆 ' : ''}${esc(p.name)}${p.you ? ' (you)' : ''}${kick}</div>${cards}${badges}</div>`;
   }).join('');
   $('chips').querySelectorAll('.k').forEach(el => {
     el.onclick = e => {
@@ -400,7 +405,7 @@ function renderOverlay() {
     o.classList.remove('hidden');
     p.innerHTML = `<h2>Table ${esc(S.code || myCode)}</h2>
       <p>Share the code. 4–6 players, then the host starts.</p>
-      <ul>${S.players.map(x => `<li><span>${x.bot ? '🤖 ' : ''}${esc(x.name)}${x.you ? ' (you)' : ''}</span><span>${x.connected ? (S.host === x.id ? 'host' : 'ready') : (x.bot ? 'bot' : 'disconnected')}${x.bot && S.you === S.host ? ` <button class="rm" data-id="${x.id}">×</button>` : ''}</span></li>`).join('')}</ul>
+      <ul>${S.players.map(x => `<li><span>${botEmoji(x)}${esc(x.name)}${x.you ? ' (you)' : ''}${botLabel(x)}</span><span>${x.connected ? (S.host === x.id ? 'host' : 'ready') : (x.bot ? 'bot' : 'disconnected')}${x.bot && S.you === S.host ? ` <button class="rm" data-id="${x.id}">×</button>` : ''}</span></li>`).join('')}</ul>
       ${S.you === S.host
         ? `<div><button id="start" ${S.players.length < 4 || S.players.length > 6 ? 'disabled' : ''}>Start (${S.players.length}/4–6)</button> <button id="addbot" class="ghost" ${S.players.length >= 6 ? 'disabled' : ''}>Add bot</button></div>`
         : '<p>Waiting for the host to start…</p>'}`;
