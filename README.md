@@ -2,6 +2,8 @@
 
 4–6 player shedding card game for the browser — a hybrid of **Big Two** (3 of diamonds starts, 3→K→A→2, singles/pairs/trios/quads) and **President** (the round-end card tax), plus a house **close** rule.
 
+> **Status: alpha.** The full round loop works end to end and is playable with people or bots, but it is pre-release: expect bugs, balance that will still move, and features listed under [Roadmap](#roadmap) that may change or be dropped. Rules below are the intended design, not a stability guarantee.
+
 ## Run
 
 ```bash
@@ -37,6 +39,8 @@ Open the link, one player hits **Create a table**, the others join with the 4-le
 - `test.js` — rule checks, bot policy, trick/closing/stacking behaviour, 40 random full rounds, card accounting, trade math.
 - `integration.js` — live-server tests: host-only kick, kicked rejoin refused, disconnect grace, bot replacement, seat recovery.
 
-## Not built (yet)
+## Roadmap
 
-Turn timers, mid-game score export, spectating, smarter bots. Say the word and they are small additions on top of `game.js`.
+Not built yet: turn timers, mid-game score export, spectating, smarter bots.
+
+Alpha scope — these are open questions rather than commitments. The rules are playable and the game is fun enough to sit at a table with, which is as far as it goes for now.
