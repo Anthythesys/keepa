@@ -9,6 +9,8 @@ const SUITS = ['D', 'C', 'H', 'S'];
 const SUIT_SYM = { D: '♦', C: '♣', H: '♥', S: '♠' };
 const RED = new Set(['D', 'H']);
 const THREE_D = '3D';
+const TURN_TIME = 30000; // 30 seconds per turn
+let gameSeq = 0; // unique id per game, so clients can settle each round exactly once
 
 const rankOf = id => RANKS.indexOf(id.slice(0, -1));
 const suitOf = id => id.slice(-1);
@@ -91,10 +93,11 @@ function stackOptions(hand, baseRank, max) {
 // bully   — highest legal card, answers multis, always stacks highest
 // shedder — sheds the most cards first (quads > trios > pairs), stacks lowest
 // saver   — like chill but holds back aces and 2s until forced
-const PERSONALITIES = ['chill', 'bully', 'shedder', 'saver'];
+// shark   — card-counting bot: tracks played cards, saves power for going out
+const PERSONALITIES = ['chill', 'bully', 'shedder', 'saver', 'shark'];
 const byRankAsc = (a, b) => rankOf(a[0]) - rankOf(b[0]);
 
-function botMove(hand, top, person) {
+function botMove(hand, top, person, g) {
   const opts = legalPlays(hand, top);
   if (!opts.length) return null;
   if (person === 'bully') {
@@ -102,6 +105,23 @@ function botMove(hand, top, person) {
   }
   if (person === 'shedder') {
     return opts.slice().sort((a, b) => b.length - a.length || byRankAsc(a, b))[0];
+  }
+  if (person === 'shark') {
+    // Card-counting: save high cards when possible, play out when close to winning
+    const totalCards = hand.length;
+    const canGoOut = opts.some(p => p.length === totalCards);
+    if (canGoOut) return opts.find(p => p.length === totalCards);
+    // Prefer playing ranks where fewer cards remain (less likely to be beaten)
+    const scored = opts.map(p => {
+      const rank = rankOf(p[0]);
+      const remaining = g ? remainingCards(g, rank) : 4;
+      const isPower = rank >= RANKS.indexOf('A');
+      // Score: prefer low remaining count, prefer non-power, prefer singles
+      const score = (isPower ? 100 : 0) + remaining * 10 + (p.length > 1 ? 5 : 0);
+      return { p, score };
+    });
+    scored.sort((a, b) => a.score - b.score);
+    return scored[0].p;
   }
   const singles = opts.filter(p => p.length === 1);
   if (person === 'saver') {
@@ -121,12 +141,20 @@ function botStack(hand, offer, person) {
   return person === 'bully' ? sorted[sorted.length - 1] : sorted[0];
 }
 
+// How many cards of a rank are still in play (not yet on the table).
+function remainingCards(g, rank) {
+  if (!g || !g.played) return 4;
+  const playedCount = g.played.filter(id => rankOf(id) === rank).length;
+  return 4 - playedCount;
+}
+
 function createGame(members, hostId) {
   return {
+    id: 'g' + (++gameSeq),
     phase: 'lobby',
     host: hostId,
     order: members.map(m => m.id),
-    players: members.map(m => ({ id: m.id, name: m.name, hand: [], place: null, bot: !!m.bot, person: m.person || null })),
+    players: members.map(m => ({ id: m.id, name: m.name, avatar: m.avatar || null, hand: [], place: null, bot: !!m.bot, person: m.person || null })),
     round: 0,
     dealer: null,
     log: [],
@@ -142,6 +170,8 @@ function createGame(members, hostId) {
     out: new Set(),
     streak: null,
     discarded: 0,
+    turnStarted: 0,
+    played: [],
   };
 }
 
@@ -151,6 +181,11 @@ const hasCards = (g, id) => {
   const p = player(g, id);
   return p && p.hand.length > 0;
 };
+
+function setTurn(g, idx) {
+  g.turnIdx = idx;
+  g.turnStarted = Date.now();
+}
 
 function say(g, msg) {
   g.log.push(msg);
@@ -177,6 +212,7 @@ function startRound(g, dealerId) {
   g.topPlay = null;
   g.stack = null;
   g.streak = null;
+  g.played = [];
   for (const p of g.players) {
     p.hand = [];
     p.place = null;
@@ -259,7 +295,7 @@ function give(g, pid, ids) {
 
 function beginPlay(g) {
   const starter = g.order.find(id => player(g, id).hand.some(c => c.id === THREE_D)) || g.order[0];
-  g.turnIdx = g.order.indexOf(starter);
+  setTurn(g, g.order.indexOf(starter));
   g.topPlay = null;
   g.stack = null;
   g.trickLog = [];
@@ -286,7 +322,7 @@ function endTrick(g) {
   g.passed = new Set();
   let idx = g.order.indexOf(owner);
   if (!hasCards(g, owner)) idx = nextWithCards(g, idx);
-  g.turnIdx = idx;
+  setTurn(g, idx);
 }
 
 function advance(g) {
@@ -297,7 +333,7 @@ function advance(g) {
     const id = g.order[idx];
     if (g.out.has(id) || g.passed.has(id)) continue;
     if (g.topPlay.player === id) continue; // everyone else passed
-    g.turnIdx = idx;
+    setTurn(g, idx);
     return;
   }
   // everyone passed: the last player may stack up to N more cards
@@ -306,7 +342,7 @@ function advance(g) {
   const p = player(g, owner);
   if (p.hand.length && stackOptions(p.hand, g.topPlay.rank, g.topPlay.size).length) {
     g.stack = { player: owner, rank: g.topPlay.rank, max: g.topPlay.size };
-    g.turnIdx = g.order.indexOf(owner);
+    setTurn(g, g.order.indexOf(owner));
     tSay(g, `${p.name} may stack ${g.topPlay.size} more card${g.topPlay.size > 1 ? 's' : ''} (${rankText(g.topPlay.rank)} or higher) or end the play.`);
     return;
   }
@@ -333,6 +369,7 @@ function stack(g, pid, ids) {
 
   p.hand = p.hand.filter(c => !ids.includes(c.id));
   g.discarded += ids.length;
+  g.played.push(...ids);
   g.topPlay.cards.push(...ids.map(id => ({ id, r: rankOf(id), s: suitOf(id) })));
   g.topPlay.size += ids.length;
   g.streak = {
@@ -385,6 +422,7 @@ function play(g, pid, ids) {
 
   p.hand = p.hand.filter(c => !ids.includes(c.id));
   g.discarded += ids.length;
+  g.played.push(...ids);
   g.streak = g.streak && g.streak.rank === combo.rank
     ? { rank: combo.rank, count: g.streak.count + combo.size }
     : { rank: combo.rank, count: combo.size };
@@ -447,6 +485,7 @@ function view(g, pid) {
   const turn = currentTurn(g);
   const mine = g.phase === 'trade' && g.trade && g.trade.need[pid] != null;
   const v = {
+    gameId: g.id,
     phase: g.phase,
     round: g.round,
     dealer: g.dealer ? nameOf(g, g.dealer) : null,
@@ -458,6 +497,7 @@ function view(g, pid) {
     players: g.players.map(p => ({
       id: p.id,
       name: p.name,
+      avatar: p.avatar || null,
       bot: !!p.bot,
       person: p.person || null,
       count: p.hand.length,
@@ -479,6 +519,7 @@ function view(g, pid) {
     }),
     legal: g.phase === 'play' && turn === pid && !g.stack ? legalPlays(me.hand, g.topPlay) : null,
     canPass: g.phase === 'play' && turn === pid && !!g.topPlay && !g.stack,
+    turnRemaining: g.phase === 'play' && g.turnStarted ? Math.max(0, TURN_TIME - (Date.now() - g.turnStarted)) : 0,
     stack: !g.stack
       ? null
       : g.stack.player === pid
@@ -500,6 +541,7 @@ function view(g, pid) {
 module.exports = {
   RANKS,
   THREE_D,
+  TURN_TIME,
   newDeck,
   shuffle,
   comboOf,
@@ -519,4 +561,6 @@ module.exports = {
   give,
   view,
   player,
+  remainingCards,
+  setTurn,
 };
