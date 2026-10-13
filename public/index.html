@@ -116,7 +116,16 @@
   .panel li { padding:5px 0; display:flex; justify-content:space-between; gap:10px; }
   #err { position:fixed; top:14px; left:50%; transform:translateX(-50%); background:#a22; color:#fff; padding:8px 16px;
          border-radius:8px; z-index:50; }
-  #vol { accent-color:var(--gold); }
+  .soundwrap { position:relative; }
+  #soundpop { position:absolute; top:calc(100% + 8px); right:0; background:#0f342b; border:1px solid #2b6;
+              border-radius:10px; padding:10px; display:flex; flex-direction:column; gap:8px; z-index:30; min-width:240px; }
+  .sound-row { display:flex; align-items:center; gap:8px; font-size:13px; color:#cde; }
+  .sound-row .sicon { font-size:15px; }
+  .sound-row .slab { flex:1; text-align:left; white-space:nowrap; }
+  .sound-row .mini { padding:2px 12px; font-size:12px; }
+  .sound-row .mini.off { opacity:.55; border-color:#a55; color:#f8b; }
+  .sound-row input[type=range] { accent-color:var(--gold); cursor:pointer; }
+  #soundbtn { user-select:none; }
 
   #felt .rim { fill:var(--rim); }
   #felt .cloth { fill:var(--table); stroke:var(--table-line); stroke-width:.7; }
@@ -175,8 +184,19 @@
     <button id="menu" class="ghost" style="padding:4px 10px" title="Abandon game, back to main menu">Menu</button>
     <button id="export" class="ghost" style="padding:4px 10px" title="Export scores as CSV">Export</button>
     <button id="hcustom" class="ghost" style="padding:4px 10px" title="Shop & style: table, cards & avatar">🛒</button>
-    <button id="mute" class="ghost" style="padding:4px 10px" title="Sound on/off">🔊</button>
-    <input id="vol" type="range" min="0" max="100" value="70" title="Volume" style="width:90px;padding:0;background:transparent;border:0">
+    <div class="soundwrap">
+      <button id="soundbtn" class="ghost" style="padding:4px 10px" title="Sound settings">🔊</button>
+      <div id="soundpop" class="hidden">
+        <div class="sound-row"><span class="sicon">🔔</span><span class="slab">Effects</span>
+          <button id="sfxbtn" class="ghost mini">On</button>
+          <input id="sfxvol" type="range" min="0" max="100" value="70" title="Effects volume" style="width:80px;padding:0;background:transparent;border:0">
+        </div>
+        <div class="sound-row"><span class="sicon">🎵</span><span class="slab">Music</span>
+          <button id="musbtn" class="ghost mini">On</button>
+          <input id="musvol" type="range" min="0" max="100" value="35" title="Music volume" style="width:80px;padding:0;background:transparent;border:0">
+        </div>
+      </div>
+    </div>
   </header>
   <div id="seats"><svg id="felt" viewBox="0 0 100 100" aria-hidden="true"></svg><div id="tabletop"></div><div id="chips"></div></div>
   <div id="center">
@@ -212,10 +232,20 @@ const once = {};
 let lastCenter = '';
 let lastHandIds = new Set();
 
-// tiny synth — WebAudio only, no files
-let soundOn = localStorage.getItem('keepa-mute') !== '1';
-const _pv = parseInt(localStorage.getItem('keepa-vol'), 10);
-let VOL = (isNaN(_pv) ? 70 : Math.min(100, Math.max(0, _pv))) / 100;
+// tiny synth — WebAudio only, no files.
+// Two independent channels: game effects (sfx) and background music.
+let sfxOn = localStorage.getItem('keepa-sfx') !== '0';
+let musOn = localStorage.getItem('keepa-mus') !== '0';
+// migrate: the old single toggle + volume split into effects + music
+if (localStorage.getItem('keepa-mute') === '1') { sfxOn = false; musOn = false; }
+const _clean = v => (isNaN(v) ? 0 : Math.min(100, Math.max(0, v))) / 100;
+let sfxVol = localStorage.getItem('keepa-sfxvol') === null ? 0.7 : _clean(parseFloat(localStorage.getItem('keepa-sfxvol')));
+let musVol = localStorage.getItem('keepa-musvol') === null ? 0.35 : _clean(parseFloat(localStorage.getItem('keepa-musvol')));
+// first run after the split: inherit the old single volume, else keep defaults
+if (localStorage.getItem('keepa-vol') !== null &&
+    localStorage.getItem('keepa-sfxvol') === null && localStorage.getItem('keepa-musvol') === null) {
+  sfxVol = musVol = _clean(parseFloat(localStorage.getItem('keepa-vol')));
+}
 
 // persisted preferences
 let savedName = localStorage.getItem('keepa-name') || '';
@@ -300,21 +330,29 @@ function ac() {
   if (AC.state === 'suspended') AC.resume();
   return AC;
 }
-function tone(freq, dur = 0.1, delay = 0, type = 'triangle', vol = 0.07) {
-  if (!soundOn) return;
+function playTone(freq, dur, delay, type, vol, on, v) {
+  if (!on) return;
   try {
     const a = ac();
     if (a.state === 'suspended') return; // no gesture yet — skip, don't queue
-    const o = a.createOscillator(), v = a.createGain();
+    const o = a.createOscillator(), g = a.createGain();
     o.type = type;
     o.frequency.value = freq;
-    v.gain.setValueAtTime(0, a.currentTime + delay);
-    v.gain.linearRampToValueAtTime(vol * VOL, a.currentTime + delay + 0.012);
-    v.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + delay + dur);
-    o.connect(v).connect(a.destination);
+    g.gain.setValueAtTime(0, a.currentTime + delay);
+    g.gain.linearRampToValueAtTime(vol * v, a.currentTime + delay + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + delay + dur);
+    o.connect(g).connect(a.destination);
     o.start(a.currentTime + delay);
     o.stop(a.currentTime + delay + dur + 0.05);
   } catch (e) { /* no audio device — stay silent */ }
+}
+// game effects follow the effects channel
+function tone(freq, dur = 0.1, delay = 0, type = 'triangle', vol = 0.07) {
+  playTone(freq, dur, delay, type, vol, sfxOn, sfxVol);
+}
+// background music follows the music channel
+function toneM(freq, dur = 0.1, delay = 0, type = 'triangle', vol = 0.02) {
+  playTone(freq, dur, delay, type, vol, musOn, musVol);
 }
 const sfx = {
   turn: () => tone(880, 0.12, 0, 'sine', 0.05),
@@ -671,7 +709,7 @@ function render() {
   // sounds — only on transitions, never on first paint
   const lastLine = (S.log || []).length ? S.log[S.log.length - 1] : '';
   const myName = (S.players.find(p => p.you) || {}).name;
-  if (booted && soundOn) {
+  if (booted && sfxOn) {
     if (!prevTurn && S.youTurn && S.phase === 'play') sfx.turn();
     if (freshCenter && S.topPlay) {
       if (lastLine.includes('closed the hand')) sfx.close();
@@ -827,18 +865,44 @@ $('pass').onclick = () => {
 $('export').onclick = () => {
   send({ t: 'export' });
 };
-$('mute').onclick = () => {
-  soundOn = !soundOn;
-  localStorage.setItem('keepa-mute', soundOn ? '0' : '1');
-  $('mute').textContent = soundOn ? '🔊' : '🔇';
+const soundIcon = () => {
+  if (sfxOn && musOn) return '🔊';
+  if (sfxOn) return '🔔';
+  if (musOn) return '🎵';
+  return '🔇';
 };
-if (!soundOn) $('mute').textContent = '🔇';
-$('vol').value = Math.round(VOL * 100);
-$('vol').oninput = () => {
-  VOL = $('vol').value / 100;
-  localStorage.setItem('keepa-vol', String($('vol').value));
+function applySoundUI() {
+  $('sfxbtn').textContent = sfxOn ? 'On' : 'Off';
+  $('musbtn').textContent = musOn ? 'On' : 'Off';
+  $('sfxbtn').classList.toggle('off', !sfxOn);
+  $('musbtn').classList.toggle('off', !musOn);
+  $('sfxvol').value = Math.round(sfxVol * 100);
+  $('musvol').value = Math.round(musVol * 100);
+  $('soundbtn').textContent = soundIcon();
+}
+$('soundbtn').onclick = e => { e.stopPropagation(); $('soundpop').classList.toggle('hidden'); };
+$('sfxbtn').onclick = () => {
+  sfxOn = !sfxOn;
+  localStorage.setItem('keepa-sfx', sfxOn ? '1' : '0');
+  if (sfxOn) sfx.turn(); // hear the channel you just switched on
+  applySoundUI();
 };
-document.addEventListener('pointerdown', () => { if (soundOn) { try { ac(); } catch (e) {} } });
+$('musbtn').onclick = () => {
+  musOn = !musOn;
+  localStorage.setItem('keepa-mus', musOn ? '1' : '0');
+  applySoundUI();
+};
+$('sfxvol').oninput = () => {
+  sfxVol = $('sfxvol').value / 100;
+  localStorage.setItem('keepa-sfxvol', String($('sfxvol').value));
+};
+$('musvol').oninput = () => {
+  musVol = $('musvol').value / 100;
+  localStorage.setItem('keepa-musvol', String($('musvol').value));
+};
+document.addEventListener('click', e => { if (!$('soundpop').contains(e.target)) $('soundpop').classList.add('hidden'); });
+applySoundUI();
+document.addEventListener('pointerdown', () => { if (sfxOn || musOn) { try { ac(); } catch (e) {} } });
 
 // background music — one soft pad chord every 2s; a new progression each round
 const TRACKS = [
@@ -851,13 +915,13 @@ let musicTimer = null, chordIdx = 0;
 document.addEventListener('pointerdown', function startMusic() {
   if (musicTimer) return;
   musicTimer = setInterval(() => {
-    if (!soundOn) return;
+    if (!musOn) return;
     try {
       if (ac().state !== 'running') return;
       const track = trackFor(S && S.round);
       const ch = track[chordIdx++ % track.length];
-      ch.forEach(f => tone(f, 1.8, 0, 'sine', 0.016));
-      tone(ch[0] < 160 ? ch[0] : ch[0] / 2, 1.8, 0, 'sine', 0.02);
+      ch.forEach(f => toneM(f, 1.8, 0, 'sine', 0.016));
+      toneM(ch[0] < 160 ? ch[0] : ch[0] / 2, 1.8, 0, 'sine', 0.02);
     } catch (e) { /* stay silent */ }
   }, 2000);
 });

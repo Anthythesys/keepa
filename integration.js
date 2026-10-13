@@ -152,7 +152,9 @@ const open = c => new Promise(res => c.ws.on('open', res));
   const inHands = end.players.reduce((n, p) => n + p.count, 0);
   assert.ok(acted > 5, 'human got turns, acted ' + acted);
   assert.ok(inHands < 52, `cards left hands (${inHands}), bots played`);
-  assert.strictEqual(end.phase, 'play', 'server survived bot turns');
+  // the game may have finished (roundend = all cards played) or still be running —
+  // either way the bots kept the table moving and nothing crashed
+  assert.ok(end.phase === 'play' || end.phase === 'roundend', 'server survived bot turns');
   solo.ws.close();
   await sleep(200);
   server.kill();
