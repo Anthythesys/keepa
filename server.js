@@ -101,6 +101,12 @@ function spectateView(g) {
   v.trade = null;
   v.stack = v.stack ? { by: v.stack.by, max: v.stack.max } : null;
   v.spectating = true;
+  // reveal the hand of the player whose turn it is, so viewers can follow the play
+  if (g.phase === 'play' && g.order[g.turnIdx]) {
+    const full = G.view(g, g.order[g.turnIdx]);
+    v.hand = full.hand;
+    v.watch = full.turn;
+  }
   return v;
 }
 

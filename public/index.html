@@ -28,7 +28,7 @@
   button:disabled { opacity:.4; cursor:not-allowed; }
   button.ghost { background:transparent; color:#cfe; border:1px solid #4a8; }
   .rm { background:#a33; color:#fff; padding:0 7px; border-radius:6px; margin-left:6px; }
-  .seat .k { background:#a33; color:#fff; border:0; border-radius:6px; padding:0 6px; margin-left:4px;
+  .seat .k { background:#a33; color:#fff; border:0; border-radius:6px; padding:0 6px; flex:0 0 auto;
              font-size:11px; cursor:pointer; }
   .card.back { background:var(--card-back); }
   html[data-cards="minimal"] .card.back { background:linear-gradient(135deg,#e6ecef,#aab6bd); }
@@ -50,7 +50,8 @@
   .seat { position:absolute; transform:translate(-50%,-50%); background:color-mix(in srgb, var(--line) 87%, transparent); border:1px solid #2b6;
           border-radius:10px; padding:5px 10px; min-width:96px; max-width:150px; text-align:center; transition:border-color .2s, box-shadow .2s; }
   .seat.turn { border-color:var(--gold); box-shadow:0 0 0 2px #e8c66a55; }
-  .seat .nm { font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .seat .nm { display:flex; align-items:center; justify-content:center; gap:5px; font-weight:600; font-size:14px; }
+  .seat .nmx { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .seat .ct { font-size:12px; color:#9fc; }
   .seat.winner { border-color:var(--gold); animation:winpulse 1s ease-in-out infinite; }
   .tag { display:inline-block; font-size:11px; padding:1px 6px; border-radius:6px; background:#e8c66a; color:#231a05; margin-left:4px; }
@@ -100,6 +101,8 @@
 
   #you { text-align:center; padding-bottom:24px; }
   .hand { display:flex; justify-content:center; padding:8px; flex-wrap:wrap; gap:0; }
+  .hand.spectate { pointer-events:none; }
+  .hand.spectate .card { opacity:.92; }
   #actions { display:flex; gap:10px; justify-content:center; margin-top:6px; }
 
   #log { max-width:640px; margin:0 auto 30px; background:color-mix(in srgb, var(--line) 60%, transparent); border-radius:10px; padding:8px 12px; font-size:13px;
@@ -441,9 +444,36 @@ $('spectate').onclick = () => {
   ensureSocket();
 };
 let roomList = [];
+const ROOM_COOLDOWN = 3000; // ms between manual room-list refreshes
+let lastRoomsAt = 0, roomCooldownTimer = null;
+
+function roomCooldownLeft() {
+  return Math.max(0, Math.ceil((ROOM_COOLDOWN - (Date.now() - lastRoomsAt)) / 1000));
+}
+function applyRoomCooldownUI() {
+  const rb = $('refresh-rooms');
+  if (!rb) return;
+  const left = roomCooldownLeft();
+  rb.disabled = left > 0;
+  rb.textContent = left > 0 ? `Refresh (${left}s)` : 'Refresh';
+}
+// Ask the server for the open-table list. A socket may not exist yet on the
+// home screen, so queue the request and let ensureSocket() flush it.
+function requestRooms() {
+  if (Date.now() - lastRoomsAt < ROOM_COOLDOWN) { applyRoomCooldownUI(); return; }
+  lastRoomsAt = Date.now();
+  pending = { t: 'list' };
+  ensureSocket();
+  applyRoomCooldownUI();
+  clearInterval(roomCooldownTimer);
+  roomCooldownTimer = setInterval(() => {
+    applyRoomCooldownUI();
+    if (roomCooldownLeft() <= 0) clearInterval(roomCooldownTimer);
+  }, 250);
+}
 $('browse').onclick = () => {
-  if (!ws || ws.readyState !== 1) return boom('Not connected yet');
-  send({ t: 'list' });
+  renderRoomList(); // show what we have right away
+  requestRooms();
 };
 
 // ---- customization: table theme, card style, avatar emoji ----
@@ -544,7 +574,7 @@ function render() {
   // header
   $('hcode').textContent = S.code || myCode;
   $('hround').textContent = S.phase === 'lobby' ? 'Lobby' : 'Round ' + S.round + ' · dealt by ' + (S.dealer || '?');
-  $('hlog').textContent = S.phase === 'play' && S.youTurn ? 'Your turn' : '';
+  $('hlog').textContent = S.spectating ? (S.phase === 'play' && S.turn ? `👁 watching ${S.turn}` : '👁 spectating') : S.phase === 'play' && S.youTurn ? 'Your turn' : '';
 
   // seats around the polygon table, you always at the bottom
   const n = S.players.length;
@@ -564,7 +594,7 @@ function render() {
     const cards = S.phase === 'lobby' ? '' : `<div class="ct">${p.out ? 'finished' : p.count + ' cards'}</div>`;
     const win = champ === p.name ? ' winner' : '';
     const kick = S.phase !== 'lobby' && S.you === S.host && !p.you && !p.bot ? `<button class="k" data-id="${p.id}" title="Kick (a bot takes over)">×</button>` : '';
-    return `<div class="seat${p.isTurn ? ' turn' : ''}${win}" style="left:${x}%;top:${y}%"><div class="nm">${avatarOf(p)}${win ? '🏆 ' : ''}${esc(p.name)}${p.you ? ' (you)' : ''}${kick}</div>${cards}${badges}</div>`;
+    return `<div class="seat${p.isTurn ? ' turn' : ''}${win}" style="left:${x}%;top:${y}%"><div class="nm"><span class="nmx">${avatarOf(p)}${win ? '🏆 ' : ''}${esc(p.name)}${p.you ? ' (you)' : ''}</span>${kick}</div>${cards}${badges}</div>`;
   }).join('');
   $('chips').querySelectorAll('.k').forEach(el => {
     el.onclick = e => {
@@ -600,7 +630,7 @@ function render() {
       $('status').textContent = `${S.stack.by} may stack up to ${S.stack.max} more or end the play`;
       $('status').className = '';
     } else {
-      $('status').textContent = S.phase !== 'play' ? '' : S.youTurn ? (S.topPlay ? 'Your turn — beat it or pass' : 'Your turn — you lead') : 'Waiting for ' + (S.turn || '…');
+      $('status').textContent = S.phase !== 'play' ? '' : S.spectating ? `👁 ${S.watch || S.turn || '…'}'s hand` : S.youTurn ? (S.topPlay ? 'Your turn — beat it or pass' : 'Your turn — you lead') : 'Waiting for ' + (S.turn || '…');
       $('status').className = S.youTurn ? 'you' : '';
     }
   }
@@ -609,12 +639,13 @@ function render() {
   const prevIds = lastHandIds;
   lastHandIds = new Set((S.hand || []).map(c => c.id));
   const playable = S.phase === 'play' && S.youTurn && !S.spectating;
-  $('hand').innerHTML = S.spectating ? '' : (S.hand || []).map(c => {
+  $('hand').innerHTML = (S.hand || []).map(c => {
     let cls = '';
     if (sel.has(c.id)) cls = 'pick';
     else if (!prevIds.has(c.id)) cls = 'in';
     return cardHTML(c, cls);
   }).join('');
+  $('hand').classList.toggle('spectate', !!S.spectating);
   $('actions').classList.toggle('hidden', !((playable || pickMode || stackMode) && !S.spectating));
   $('play').textContent = pickMode ? `Give ${sel.size}/${S.trade.give}` : stackMode ? `Stack ${sel.size}/${S.stack.max}` : 'Play';
   $('play').disabled = pickMode ? (sel.size !== S.trade.give || !!once['give:' + S.round]) : stackMode ? !stackNow() : !legalNow();
@@ -686,10 +717,10 @@ function renderRoomList() {
   o.classList.remove('hidden');
   const rows = roomList.length
     ? roomList.map(r => `<li><span>${esc(r.code)}</span><span>${r.players - r.bots}/${r.max} players${r.bots ? ` (+${r.bots} bot${r.bots > 1 ? 's' : ''})` : ''}</span><span><button class="ghost" data-code="${esc(r.code)}" style="padding:4px 10px">Join</button></span></li>`).join('')
-    : '<li><span>No open tables right now</span><span>—</span><span><button class="ghost" id="refresh-rooms" style="padding:4px 10px">Refresh</button></span></li>';
+    : '<li><span>No open tables right now</span><span>—</span><span></span></li>';
   p.innerHTML = `<h2>Open tables</h2>
     <ul style="max-height:40vh;overflow:auto">${rows}</ul>
-    <button id="close-rooms" class="ghost">Close</button>`;
+    <div><button id="refresh-rooms" class="ghost">Refresh</button> <button id="close-rooms" class="ghost">Close</button></div>`;
   p.querySelectorAll('button[data-code]').forEach(btn => {
     btn.onclick = () => {
       $('code').value = btn.dataset.code;
@@ -698,7 +729,8 @@ function renderRoomList() {
     };
   });
   const rb = $('refresh-rooms');
-  if (rb) rb.onclick = () => send({ t: 'list' });
+  if (rb) rb.onclick = () => requestRooms();
+  applyRoomCooldownUI();
   $('close-rooms').onclick = () => {
     o.classList.add('hidden');
     $('home').classList.remove('hidden');

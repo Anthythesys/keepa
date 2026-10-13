@@ -41,7 +41,7 @@ Open the link, one player hits **Create a table**, the others join with the 4-le
 
 ## Roadmap
 
-Built: turn timers, mid-game score export, spectating, smarter bots, public/private tables with an open-room browser, and a client-side shop for customization (table colour, card style, avatar emoji) paid for with money earned from round placements.
+Built: turn timers, mid-game score export, spectating (viewers see the hand of the player whose turn it is), smarter bots, public/private tables with a refreshable open-room browser, and a client-side shop for customization (table colour, card style, avatar emoji) paid for with money earned from round placements.
 
 Not built yet: persistent accounts and stats, ranked matchmaking, configurable house rules.
 
