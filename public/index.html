@@ -28,6 +28,8 @@
   button:disabled { opacity:.4; cursor:not-allowed; }
   button.ghost { background:transparent; color:#cfe; border:1px solid #4a8; }
   .rm { background:#a33; color:#fff; padding:0 7px; border-radius:6px; margin-left:6px; }
+  .qok { background:#2b6; color:#eef; padding:2px 10px; border-radius:6px; font-size:12px; }
+  .qno { background:#a33; color:#fff; padding:2px 10px; border-radius:6px; font-size:12px; }
   .seat .k { background:#a33; color:#fff; border:0; border-radius:6px; padding:0 6px; flex:0 0 auto;
              font-size:11px; cursor:pointer; }
   .card.back { background:var(--card-back); }
@@ -397,6 +399,7 @@ function ensureSocket() {
     if (m.t === 'joined') { myId = m.pid; myCode = m.code; sessionStorage.setItem('keepa', JSON.stringify({ code: m.code, name: myName })); }
     if (m.t === 'err') { for (const k in once) delete once[k]; boom(m.msg); }
     if (m.t === 'kicked') { leaveToMenu('You were kicked — a bot took your seat.'); return; }
+    if (m.t === 'queuedenied') { leaveToMenu(m.msg || 'The host declined your seat'); return; }
     if (m.t === 'export') {
       const blob = new Blob([m.csv], { type: 'text/csv' });
       const a = document.createElement('a');
@@ -603,6 +606,19 @@ function legalNow() {
 
 function render() {
   if (!S) return;
+  // waiting in the join queue — just a panel, no table
+  if (S.phase === 'queue') {
+    $('home').classList.add('hidden');
+    $('app').classList.add('hidden');
+    const o = $('overlay'), p = $('panel');
+    o.classList.remove('hidden');
+    p.innerHTML = `<h2>Waiting to join ${esc(S.code)}</h2>
+      <p>Position <b>${S.pos}</b> of ${Math.max(S.pos || 0, S.total || 1)} in line. The host (${esc(S.host || '?')}) accepts or declines at the end of the round.</p>
+      <p style="color:#9ab;font-size:12px">If you get in you start last, seeded on the previous last player's points +2.</p>
+      <button id="leavequeue">Leave the queue</button>`;
+    $('leavequeue').onclick = () => leaveToMenu();
+    return;
+  }
   const keep = new Set((S.hand || []).map(c => c.id));
   [...sel].forEach(id => { if (!keep.has(id)) sel.delete(id); });
   $('home').classList.add('hidden');
@@ -796,15 +812,23 @@ function renderOverlay() {
   }
   if (S.phase === 'roundend') {
     o.classList.remove('hidden');
+    const qrows = (S.queue || []).length
+      ? (S.queue || []).map(q => `<li><span>🕐 ${esc(q.name)} wants to join</span><span>${S.you === S.host
+          ? `<button class="qok" data-id="${esc(q.id)}">Accept</button> <button class="qno" data-id="${esc(q.id)}">Refuse</button>`
+          : `#${q.pos} waiting`}</span></li>`).join('')
+      : '';
     p.innerHTML = `<h2>Round ${S.round} results</h2>
       <div class="trophy">🏆</div>
       <ul>${S.standings.map((n, i) => `<li class="${i === 0 ? 'champ' : ''}"><span>#${i + 1} ${esc(n)}</span></li>`).join('')}</ul>
       <h3>Score (lower is better)</h3>
       <ul>${[...S.scores].sort((a, b) => a.total - b.total).map(s => `<li><span>${esc(s.name)}</span><span>${s.places.join(', ')} = ${s.total}</span></li>`).join('')}</ul>
       <p class="payout">💰 You earned $${roundPayout()} this round</p>
+      ${qrows ? `<h3>Join queue</h3><ul>${qrows}</ul>` : ''}
       ${S.you === S.host ? '<button id="next">Next round — loser deals</button>' : '<p>Waiting for the host…</p>'}`;
     const b = $('next');
     if (b) b.onclick = () => oncePer('next:' + S.round, () => send({ t: 'next' }));
+    p.querySelectorAll('.qok').forEach(el => { el.onclick = () => oncePer('qok:' + el.dataset.id, () => send({ t: 'qAccept', id: el.dataset.id })); });
+    p.querySelectorAll('.qno').forEach(el => { el.onclick = () => oncePer('qno:' + el.dataset.id, () => send({ t: 'qRefuse', id: el.dataset.id })); });
     return;
   }
   if (S.phase === 'trade') {

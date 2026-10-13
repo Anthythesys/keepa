@@ -18,6 +18,8 @@ Open the link, one player hits **Create a table**, the others join with the 4-le
 
 **Menu, kick, reconnects** — *Menu* (top bar, asks first) abandons the game back to the home screen. In game, the host can kick a player with the × on their seat (asks first); a bot takes their seat immediately and the kicked player can't rejoin that room. If anyone's connection drops mid-round they have 60 seconds to come back (same name + code); after that a bot takes over, and returning later puts them straight back in the bot's seat.
 
+**Joining a game in progress** — trying to join a room whose round is already running puts you in a **waiting queue** (a table with six humans is closed outright; six seats with bots still queues you). At the end of the round the host sees the queue and can **Accept** or **Refuse** each waiting player. Accepted players join at the **end of the turn order** for the next round, seeded **last on the previous last player's points + 2**. Accepting into a full table retires a bot to make room; once the table is full with no bots left, any remaining queue entries are rejected automatically.
+
 ## Rules as implemented
 
 - **Deck** — all 52 cards, dealt one at a time counterclockwise starting with the player after the dealer, so hands differ by one card. The dealer is the last place from the previous round (random for round 1).
@@ -41,7 +43,7 @@ Open the link, one player hits **Create a table**, the others join with the 4-le
 
 ## Roadmap
 
-Built: turn timers, mid-game score export, spectating (viewers see the hand of the player whose turn it is), smarter bots, public/private tables with a refreshable open-room browser, and a client-side shop for customization (table colour, card style, avatar emoji) paid for with money earned from round placements.
+Built: turn timers, mid-game score export, spectating (viewers see the hand of the player whose turn it is), smarter bots, public/private tables with a refreshable open-room browser, a join queue for players arriving mid-game (host accepts/refuses at round end, newcomers seeded last +2 on the previous last player's points), and a client-side shop for customization (table colour, card style, avatar emoji) paid for with money earned from round placements.
 
 Not built yet: persistent accounts and stats, ranked matchmaking, configurable house rules.
 

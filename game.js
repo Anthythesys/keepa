@@ -247,12 +247,15 @@ function take(g, takerId, giverId, k) {
 }
 
 // 1st <-> last: 2 cards. 2nd <-> 2nd-last: 1 card. Middle players are safe.
+// Index by the *previous round's* standings (lastStandings), not g.order, so a
+// mid-game joiner appended to g.order is simply skipped by the trade math.
 function applyTrades(g) {
   const s = g.lastStandings;
-  const n = g.order.length;
+  const m = s.length;
+  if (m < 2) return beginPlay(g);
   const deals = [
-    [s[0], s[n - 1], 2],
-    [s[1], s[n - 2], 1],
+    [s[0], s[m - 1], 2],
+    [s[1], s[m - 2], 1],
   ];
   const need = {};
   const received = {};

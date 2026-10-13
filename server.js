@@ -68,12 +68,23 @@ function makeCode() {
   return code;
 }
 
+// Joiners who arrive mid-game wait in the queue; the host accepts/refuses at
+// round end. Their presence shows up in every state sent during 'roundend'.
+function augmentQueue(s, room) {
+  if (room.game && room.game.phase === 'roundend' && room.queue && room.queue.length) {
+    s.queue = room.queue.map((q, i) => ({ id: q.id, name: q.name, pos: i + 1 }));
+  }
+  return s;
+}
+
 function broadcast(room) {
   for (const p of room.players) {
-    send(p.ws, { t: 'state', s: room.game ? G.view(room.game, p.id) : lobbyView(room, p.id) });
+    const s = room.game ? G.view(room.game, p.id) : lobbyView(room, p.id);
+    send(p.ws, { t: 'state', s: augmentQueue(s, room) });
   }
   for (const sp of (room.spectators || [])) {
-    send(sp.ws, { t: 'state', s: room.game ? spectateView(room.game) : lobbyView(room, sp.id) });
+    const s = room.game ? spectateView(room.game) : lobbyView(room, sp.id);
+    send(sp.ws, { t: 'state', s: augmentQueue(s, room) });
   }
   scheduleBot(room);
   enforceTurnTimer(room);
@@ -86,7 +97,8 @@ function cleanupIfAbandoned(room) {
   const anyHumanConnected = room.players.some(p => p.ws !== null && !p.bot);
   const anyHumanGrace = room.grace && Object.keys(room.grace).length > 0;
   const anySpectator = (room.spectators || []).length > 0;
-  if (!anyHumanConnected && !anyHumanGrace && !anySpectator && room.game) {
+  const anyQueued = (room.queue || []).some(q => q.ws);
+  if (!anyHumanConnected && !anyHumanGrace && !anySpectator && !anyQueued && room.game) {
     clearGrace(room);
     rooms.delete(room.code);
   }
@@ -238,7 +250,29 @@ function seat(room, ws, name, avatar) {
     const gp = room.game && G.player(room.game, p.id);
     if (gp) gp.avatar = avatar;
   } else if (room.game) {
-    return send(ws, { t: 'err', msg: 'Game already in progress' });
+    // Game already running: the newcomer waits in the queue and the host
+    // decides at the end of the round. A table with six humans is closed.
+    room.queue = room.queue || [];
+    if (room.players.length >= 6 && !room.players.some(p => p.bot)) {
+      return send(ws, { t: 'err', msg: 'Game in progress and the table is full (6 players)' });
+    }
+    let q = room.queue.find(x => x.name.toLowerCase() === name.toLowerCase());
+    if (q) {
+      // same person refreshing / reconnecting: keep one queue entry
+      if (q.ws && q.ws !== ws) { try { q.ws.close(); } catch (e) {} }
+      q.ws = ws;
+      q.avatar = avatar;
+    } else {
+      q = { id: 'q' + ++seq, name, avatar, ws };
+      room.queue.push(q);
+    }
+    ws.pid = q.id;
+    ws.code = room.code;
+    ws.queued = true;
+    send(ws, { t: 'joined', code: room.code, pid: q.id });
+    sendQueueState(room, q);
+    if (room.game.phase === 'roundend') broadcast(room); // host can decide right now
+    return;
   } else if (room.players.length >= 6) {
     return send(ws, { t: 'err', msg: 'Room is full (max 6)' });
   } else {
@@ -253,6 +287,101 @@ function seat(room, ws, name, avatar) {
 
 function roomOf(ws) {
   return rooms.get(ws.code);
+}
+
+// ---- join queue (players arriving mid-game) ----
+
+function sendQueueState(room, q) {
+  if (!q.ws) return;
+  const pos = (room.queue || []).indexOf(q) + 1;
+  send(q.ws, {
+    t: 'state',
+    s: {
+      phase: 'queue',
+      code: room.code,
+      you: q.id,
+      host: room.players[0] && room.players[0].name,
+      pos,
+      total: (room.queue || []).length,
+    },
+  });
+}
+
+// Remove a queued player: tell them why and close the socket.
+function dropQueued(room, q, msg) {
+  const i = (room.queue || []).indexOf(q);
+  if (i >= 0) room.queue.splice(i, 1);
+  if (q.ws) {
+    try {
+      send(q.ws, { t: 'queuedenied', msg });
+      q.ws.close();
+    } catch (e) {}
+    q.ws.queued = false;
+    q.ws.pid = null;
+    q.ws.code = null;
+  }
+}
+
+// The table seats are full with no bots → nobody left can be let in.
+function autoRejectIfFull(room) {
+  if (!room.queue || !room.queue.length) return;
+  const fullNoBots = room.players.length >= 6 && !room.players.some(p => p.bot);
+  if (!fullNoBots) return;
+  const rest = room.queue.splice(0, room.queue.length);
+  for (const q of rest) dropQueued(room, q, 'The table is full — no more seats');
+}
+
+// Host accepted a queued player at round end: seat them and seed them last.
+function acceptQueued(room, qid) {
+  const q = (room.queue || []).find(x => x.id === qid);
+  if (!q) return { err: 'No such player in the queue' };
+  const fullNoBots = room.players.length >= 6 && !room.players.some(p => p.bot);
+  if (fullNoBots) return { err: 'The table is full' };
+  // Full but with bots: retire a bot to free the seat.
+  if (room.players.length >= 6) {
+    const bi = room.players.findIndex(p => p.bot);
+    if (bi < 0) return { err: 'No free seats' };
+    const bot = room.players.splice(bi, 1)[0];
+    const g = room.game;
+    if (g) {
+      const gi = g.players.findIndex(p => p.id === bot.id);
+      if (gi >= 0) g.players.splice(gi, 1);
+      const oi = g.order.indexOf(bot.id);
+      if (oi >= 0) g.order.splice(oi, 1);
+      delete g.scores[bot.id];
+      g.out.delete(bot.id);
+      g.passed.delete(bot.id);
+      if (g.lastStandings) {
+        const li = g.lastStandings.indexOf(bot.id);
+        if (li >= 0) g.lastStandings.splice(li, 1);
+      }
+      const si = g.standings.indexOf(bot.id);
+      if (si >= 0) g.standings.splice(si, 1);
+    }
+    note(room, `${bot.name} leaves to make room.`);
+  }
+  const qi = (room.queue || []).indexOf(q);
+  if (qi >= 0) room.queue.splice(qi, 1);
+  const pid = 'p' + ++seq;
+  const p = { id: pid, name: q.name, avatar: q.avatar || null, ws: q.ws };
+  room.players.push(p);
+  let lastTotal = 0;
+  const g = room.game;
+  if (g) {
+    for (const id of g.order) lastTotal = Math.max(lastTotal, (g.scores[id] || { total: 0 }).total);
+    g.players.push({ id: pid, name: q.name, avatar: q.avatar || null, hand: [], place: null, bot: false, person: null });
+    g.order.push(pid); // starts last
+    g.scores[pid] = { places: [], total: lastTotal + 2 }; // seeded behind the previous last player
+  }
+  if (q.ws) {
+    q.ws.pid = pid;
+    q.ws.code = room.code;
+    q.ws.queued = false;
+    send(q.ws, { t: 'joined', code: room.code, pid });
+  }
+  note(room, `${q.name} joins the table, seeded last with ${lastTotal + 2} points.`);
+  autoRejectIfFull(room);
+  return { ok: true };
 }
 
 // visible announcement (lands in the trick log too)
@@ -435,6 +564,25 @@ function handle(ws, m) {
       G.startRound(room.game, room.game.lastStandings[room.game.lastStandings.length - 1]);
       return broadcast(room);
     }
+    case 'qAccept': {
+      const room = roomOf(ws);
+      if (!room || !room.game) return fail('No game');
+      if (room.game.host !== ws.pid) return fail('Only the host can do that');
+      if (room.game.phase !== 'roundend') return fail('Wait for the round to end');
+      const r = acceptQueued(room, m.id);
+      if (r.err) return fail(r.err);
+      return broadcast(room);
+    }
+    case 'qRefuse': {
+      const room = roomOf(ws);
+      if (!room || !room.game) return fail('No game');
+      if (room.game.host !== ws.pid) return fail('Only the host can do that');
+      if (room.game.phase !== 'roundend') return fail('Wait for the round to end');
+      const q = (room.queue || []).find(x => x.id === m.id);
+      if (!q) return fail('No such player in the queue');
+      dropQueued(room, q, 'The host declined your seat');
+      return broadcast(room);
+    }
     default:
       return fail('Unknown message');
   }
@@ -458,6 +606,14 @@ wss.on('connection', ws => {
   ws.on('close', () => {
     const room = rooms.get(ws.code);
     if (!room) return;
+    if (ws.queued) {
+      const qi = (room.queue || []).findIndex(x => x.ws === ws);
+      if (qi >= 0) room.queue.splice(qi, 1);
+      ws.queued = false;
+      ws.code = null;
+      ws.pid = null;
+      return broadcast(room);
+    }
     if (ws.spectating) {
       const i = (room.spectators || []).findIndex(x => x.id === ws.pid);
       if (i >= 0) room.spectators.splice(i, 1);
