@@ -1,0 +1,14 @@
+[Unit]
+Description=Keepa server + Cloudflare tunnel (tunnel via wlan1)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/keepa-start.sh --watch
+Restart=always
+RestartSec=15
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -48,3 +48,23 @@ Built: turn timers, mid-game score export, spectating (viewers see the hand of t
 Not built yet: persistent accounts and stats, ranked matchmaking, configurable house rules.
 
 Alpha scope — these are open questions rather than commitments. The rules are playable and the game is fun enough to sit at a table with, which is as far as it goes for now.
+
+## Always-on setup (Linux/systemd)
+
+`keepa-start.sh` brings up the game server and a Cloudflare quick tunnel, forcing only the tunnel's traffic out through `wlan1` so everyday browsing keeps using `wlan0`. It is idempotent and can be run repeatedly.
+
+```
+sudo install -m 755 keepa-start.sh /usr/local/bin/keepa-start.sh
+sudo /usr/local/bin/keepa-start.sh          # one-shot setup; prints the URL
+```
+
+`keepa.service` runs the script in watchdog mode (`--watch`), rechecking every 60 s and restarting the server or tunnel if either dies. To install it permanently:
+
+```
+sudo install -m 755 keepa-start.sh /usr/local/bin/keepa-start.sh
+sudo install -m 644 keepa.service /etc/systemd/system/keepa.service
+sudo systemctl daemon-reload && sudo systemctl enable --now keepa.service
+journalctl -u keepa.service -f               # find the current tunnel URL
+```
+
+The current URL is also written to `/tmp/opencode/keepa-url.txt`. Quick-tunnel URLs change whenever the tunnel restarts.
